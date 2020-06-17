@@ -1,2 +1,270 @@
 # Dimension-Reduction-R
 Uses Principal Component Analysis and Factor Analysis
+
+---
+title: "Dimension reduction via PCA and FA"
+author: "Kyle Barisone"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+lib <- c("gplots","forcats","dplyr", "mice", "missForest", "ggplot2", "gridExtra", "knitr", "scales", "lattice", "kableExtra","pander","psych","GPArotation","corrplot")
+invisible(lapply(lib, library, character.only=T))
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+theme_set(theme_bw())
+scale_fill_discrete <- scale_fill_viridis_d
+```
+
+# Principal Components
+
+## 1. PMA6 14.1 (modified): For the depression data set, perform a PCA on the last seven variables `DRINK-CHRONILL`. 
+Use the covariance matrix, but *do not center or scale* the data. You should have the codebook for this data set open during this homework. 
+
+```{r}
+Depress <- readRDS("C:/Users/KBari/OneDrive/Desktop/Math 456/Depression_data.rds")
+```
+
+### a) Determine the number of PC's to retain that contain 80% of the original variance.
+
+```{r}
+
+pc_dep <- princomp(Depress[,31:37])
+
+
+var_pc <- (pc_dep$sdev)^2
+
+qplot(x=1:19, y=cumsum(var_pc)/sum(var_pc)*100, geom="point") + 
+  xlab("PC number") + ylab("Cumulative %") + ylim(c(0,100)) +
+  geom_hline(aes(yintercept=80))
+
+```
+
+4 principal components retain about 81% of the original variance. So we need to retain 4 principal components to maintain at least 80% of the original variance.
+
+### b) Examine the loadings of the retained PC's using a heatmap. Interpret each PC as it relates to the individual questions. 
+
+```{r}
+
+heatmap.2(pc_dep$loadings[,1:4], scale="none", Rowv=NA, Colv=NA, density.info="none",
+          dendrogram="none", trace="none", col=rev(heat.colors(256)))
+
+heatmap.2(pc_dep$loadings[,1:8], scale="none", Rowv=NA, Colv=NA, density.info="none",
+          dendrogram="none", trace="none", col=rev(heat.colors(256)))
+
+```
+
+PC1 has no variables with high positive scores and has a very low negative score for health.
+
+PC2 has high positive scores for chronic illness, acute illness, days spent in bed, and treatment given by a doctor.
+
+PC3 has high positive scores for acute illness, days spent in bed, and health.
+
+PC4 has high positive scores for overall health, treatment from a doctor, and if the individual is a regular drinker.
+
+## 2. Repeat question #1 using the correlation matrix instead of the covariance matrix. 
+Compare the results and comment. (Are the same number of PC's retained? Are the loadings different?)
+
+```{r}
+pc_dep <- princomp(Depress[,31:37], cor = TRUE)
+
+var_pc <- (pc_dep$sdev)^2
+
+qplot(x=1:7, y=cumsum(var_pc)/sum(var_pc)*100, geom="point") + 
+  xlab("PC number") + ylab("Cumulative %") + ylim(c(0,100)) +
+  geom_hline(aes(yintercept=80))
+
+```
+
+When using the correlation matrix, we need to retain 5 principal components to maintain at least 80% of the original variance.
+
+```{r}
+heatmap.2(pc_dep$loadings[,1:5], scale="none", Rowv=NA, Colv=NA, density.info="none",
+          dendrogram="none", trace="none", col=rev(heat.colors(256)))
+```
+
+Whether or not the respondant is a regular drinker seems to have a high positive loading for all components but is highest in component 3.
+
+For PC1 signs of loading are all fairly low negatively except for if they are a regular drinker or not and if they regularly see a doctor. 
+
+People with high values for PC2 tend to have more acute illness and more days spent in bed.
+
+Respondants with high values for PC3 tend to regularly see a doctor and get treatment or medicine prescribed by a doctor.
+
+People with high values for PC4 tend to score high on health, treatment, and chronic illness but do not regularly see a doctor.
+
+People with high positive values for PC5 tend to regularly see a doctor and spend a lot of days in bed but have good overall health.
+
+People who regularly see a doctor score high on pc3 and pc5 but low on pc4.
+
+The score on the general health of the respondant increases with each component.
+
+The loadings and the number of PC's retained are different from the covariant matrix.
+
+## 3. Repeat question #1 after normalizing the data (centering and scaling). Use the `scale()` function here to help. Compare the results and comment. (Are the same number of PC's retained? Are the loadings different?)
+
+```{r}
+Depress_scaled <- scale(Depress[,31:37], center = TRUE, scale = TRUE)
+
+pc_dep <- princomp(Depress_scaled)
+
+var_pc <- (pc_dep$sdev)^2
+
+qplot(x=1:7, y=cumsum(var_pc)/sum(var_pc)*100, geom="point") + 
+  xlab("PC number") + ylab("Cumulative %") + ylim(c(0,100)) +
+  geom_hline(aes(yintercept=80))
+
+heatmap.2(pc_dep$loadings[,1:10], scale="none", Rowv=NA, Colv=NA, density.info="none",
+          dendrogram="none", trace="none", col=rev(heat.colors(256)))
+```
+
+After Centering and scaling, the number of pc's we retain are 5 which is the same amount as when we used the correlation matrix from problem 2. The loadings are also the same from the correlation matrix. It seems that scaling and centering the data makes the covariant matrix more similar to the correlation matrix.
+
+
+
+## 4 (PMA6 14.2 modified): Perform a regression analysis of `CASES` on your retained PC's *from question 3* Interpret the results. Recall that PC's are on the scale of a standard deviation of the PC scale. So you can say "for every one standard deviation on the PC1 scale an individual is.... ". But don't just call it "PC1". Use your interpretation from the loadings visualized in question 3. 
+
+```{r}
+dim(pc_dep$scores); kable(pc_dep$scores[1:7, 1:7])
+Depress$pc1 <- pc_dep$scores[,1]
+Depress$pc2 <- pc_dep$scores[,2]
+Depress$pc3 <- pc_dep$scores[,3]
+Depress$pc4 <- pc_dep$scores[,4]
+Depress$pc5 <- pc_dep$scores[,5]
+
+PC.model <- glm(cases~pc1+pc2+pc3+pc4+pc5, data=Depress, family='binomial') 
+
+summary(PC.model)
+confint(PC.model)
+```
+
+Controlling for all other PCs, for every 1 standard deviation on the PC1 scale (or individuals who are regular drinkers who see a doctor regularly and are fairly healthy) an individual is 0.323 (0.109, 0.546) less likely to be
+depressed (p=0.004).
+
+Controlling for all other PCs, for every 1 standard deviation on the PC2 scale (or people who spend a lot of days in bed and have acute illness) an individual is .250 (0, .502) more likely to be depressed (p=0.050).
+
+Controlling for all other PCs, for every 1 standard deviation on the PC3 scale (or people who regularly see a doctor and receive treatment) scale an individual is .121 (-.428, .195) times less likely to
+be depressed (p=0.443). However, this is a highly insignificant p-value.
+
+Controlling for all other PCs, for every 1 standard deviation on the PC4 scale (or people with chronic illness who do not see a doctor regularly) an individual is .259 (-.065, .588) more likely to be
+depressed (p=0.118). However, this is not a significant p-value.
+
+Controlling for all other PCs, for every 1 standard deviation on the PC5 scale (or people in good health who regularly see a doctor but do not recieve much treatment) an individual is .317 (-.052, .698) more likely to be depressed (p=0.096).
+
+## 5 (PMA6 14.11 modified): This question uses the Parental HIV data set. 
+### a) If you were to conduct a PCA on the items of the Parental Bonding scale, _a priori_ how many PC's would you expect to retain for this scale? 
+
+```{r}
+HIV <- read.csv("C:/Users/KBari/OneDrive/Desktop/Math 456/Parhiv.csv")
+View(HIV)
+```
+
+I would expect to retain around 10 variables because looking at the codebook, a lot of these questions seem like they are redundant and might have similar answers.
+
+
+### b) Perform this PCA. How many components should be retained based on the rules of thumb mentioned in Section 14.5 (% variance retained, Eigenvalues > 1, scree plot)?
+
+```{r}
+pc_HIV <- princomp(na.omit(HIV[,34:58]), cor = TRUE)
+
+var_pc <- (pc_HIV$sdev)^2
+
+qplot(x=34:58, y=cumsum(var_pc)/sum(var_pc)*100, geom="point") + 
+  xlab("PC number") + ylab("Cumulative %") + ylim(c(0,100)) +
+  geom_hline(aes(yintercept=80))
+
+qplot(x=1:19, y=var_pc, geom=c("point", "line")) + 
+  xlab("PC number") + ylab("Eigenvalue") + ylim(c(0,8))
+```
+
+At least 4 components should be retained looking at the scree plot. Using the elbow rule, it starts to flatten out around the 4th component. 14 components lets us retain about 80% of the original variance if we are using the first plot. Finally 7 components have eigenvalues greater than 1.
+
+By these graphs, there is not clear amount of principal components to retain, so based off the total variance graph and the eigenvalues, we should retain at least 7 principal components for analysis.
+
+----
+
+# Factor Analysis
+
+## 1. (PMA6 15.1). The CESD scale items (`C1-C20`) from the depression data set were used to obtain the factor loadings listed in Table 15.7. The initial factor solution was obtained from the principal components method, and a varimax rotation was performed. Analyze this same data set by using an oblique rotation such as the direct quartimin procedure. Compare the results. 
+
+```{r}
+Depress <- readRDS("C:/Users/KBari/OneDrive/Desktop/Math 456/Depression_data.rds")
+
+cesd.scale <- scale(Depress[c(9:28)])
+
+pc.extract.quartimin <- principal(cesd.scale, nfactors=4, rotate="quartimin")
+
+print(pc.extract.quartimin)
+plot(pc.extract.quartimin, title="Oblique Rotation (Principal)")
+```
+
+Using the oblique quartimin rotation, we see similar results from the table in the textbook. We see a 3% higher proportion of variance in TC1 and a slightly lower proportion of variance for TC2,TC3, and TC4. All values are fairly similar though.
+
+## 2. (PMA6 15.6) Separate the depression data set into two subgroups, men and women. Using four factors, repeat the factor analysis in Table 15.7. Compare the results of your two factor analyses to each other, and do the results in Table 15.7. 
+
+```{r}
+
+Depress$sex <- ifelse(Depress$sex == 0, "male", "female")
+
+#separates males and females
+dep.male<- filter(Depress, sex=="male")
+dep.female<- filter(Depress, sex=="female")
+
+male.scale<- scale(dep.male[c(9:28)])
+male.factor <- principal(male.scale, nfactors=4, rotate="varimax")
+
+female.scale<- scale(dep.female[c(9:28)])
+female.factor <- principal(female.scale, nfactors=4, rotate="varimax")
+
+#plot for males
+print(male.factor)
+plot(male.factor, title="Male Varimax")
+```
+
+Black dots have high positive correlation in RC1 and lower correlation in RC3.
+
+Blue dots tend to have high positive correlation in RC2.
+
+Red dots tend to have high positive correlation in RC3.
+
+Gray squares have a high correlation in RC4.
+
+```{r}
+#plot for females
+print(female.factor)
+plot(female.factor, title="Female Varimax")
+```
+
+Black dots on the graph tend to have a high positive correlation within RC1 and a negative correlation within RC2.
+
+Blue dots tend to have a high positive correlation with RC3 and a high negative correlation in RC2.
+
+Red dots seem to only be correlated with RC2 and the correlation is high positive.
+
+Gray squares tend to have high correlation within RC4.
+
+There are less Gray points in the graph for females. In addition it seems that blue and red dots in RC2 and RC3 have switched places for females compared to males.
+
+## 3. (PMA6 15.8) Perform a factor analysis on all of the items of the Parental Bonding scale for the Parental HIV data set. Retain two factors. Rotate the factors using an orthogonal rotation. Do the items with the highest loadings for each of the factors correspond to the items of the overprotection and care scale? Interpret the findings. 
+
+```{r}
+parent.cols <- scale(HIV[c(34:58)])
+parent.factor <- principal(parent.cols, nfactors = 2, rotate = "varimax")
+plot(parent.factor, title="Oblique Rotation (Principal)")
+
+```
+
+The black points on the graph tend to be correlated positively or negatively with RC1. The black points tend to correspond with the care subscale of the parental bonding variables.
+
+The blue points on the graph tend to be correlated positively or negatively with RC2. The blue points tend to correspond with the overprotection subscale of the parental bonding variables.
+
+## 4. (PMA6 15.9) Repeat problem #3 (15.8) using an oblique rotation. DO the substantive conclusions change? 
+
+```{r}
+parent.factor.ob <- principal(parent.cols, nfactors = 2, rotate = "quartimin")
+plot(parent.factor.ob)
+```
+
+The values seem pretty similar when observing both the rotations together.The conclusions do not change when using an oblique rotation.
+
